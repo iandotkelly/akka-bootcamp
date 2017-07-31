@@ -1,6 +1,7 @@
 package com.bitbrew.bootcamp
 
-import akka.actor.{ Actor, ActorLogging, Props }
+import akka.actor._
+import akka.persistence._
 import java.time.LocalDateTime
 
 final case class User(email: String, password: String, name: Option[String], createdAt: LocalDateTime)
@@ -8,7 +9,7 @@ final case class User(email: String, password: String, name: Option[String], cre
 /**
  * Singleton to handle user management
  */
-class UserManager extends Actor with ActorLogging {
+class UserManager extends PersistentActor {
 
   import UserManager._
 
@@ -24,7 +25,6 @@ class UserManager extends Actor with ActorLogging {
   def create(newUser: UserRequest): User = {
     val date = LocalDateTime.now
     val user = User(newUser.email, "randompassword", newUser.name, date)
-    users = user :: users
     user
   }
 
@@ -42,14 +42,48 @@ class UserManager extends Actor with ActorLogging {
     users = List[User]()
   }
 
+  case class Users(users: List[User])
+
   /**
-   * message handler
+   * command handler
    */
-  override def receive: Receive = {
+  override def receiveCommand: Receive = {
+    // return users, no need to update any state
     case Get => sender ! users
-    case Clear => sender ! clear
-    case Create(newUser: UserRequest) => sender ! create(newUser)
+    // clear all users
+    case Clear => {
+      persist(UserManager.Clear) { event =>
+        // update the state
+        clear
+        context.system.eventStream.publish(event)
+        // return the empty state
+        sender ! users
+      }
+    }
+    // create a user, and persist it
+    case Create(newUser: UserRequest) => {
+      val user = create(newUser)
+      persist(user) { event =>
+        // update and return the state
+        users = user :: users
+        // what does this line actually do?
+        context.system.eventStream.publish(event)
+        // finally return the user
+        sender ! user
+      }
+    }
   }
+
+  override def receiveRecover: Receive = {
+    // just clear the collection
+    case Clear => clear
+    // append a user to the collection
+    case user: User => users = user :: users
+    // replace entire collection
+    case SnapshotOffer(_, snapshot: Users) => users = snapshot.users
+  }
+
+  def persistenceId = "bootcamp-user-manager"
 }
 
 object UserManager {
