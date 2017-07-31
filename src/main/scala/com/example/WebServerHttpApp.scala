@@ -105,7 +105,7 @@ object WebServerHttpApp extends HttpApp with JsonSupport {
       }
 }
 
-object Main extends {
+object Main {
   def main(args: Array[String]) {
     // This will start the server until the return key is pressed
     WebServerHttpApp.startServer("localhost", 8080)
