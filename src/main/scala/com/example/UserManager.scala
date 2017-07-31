@@ -1,5 +1,6 @@
 package com.bitbrew.bootcamp
 
+import akka.actor.{ Actor, ActorLogging, Props }
 import java.time.LocalDateTime
 
 final case class User(email: String, password: String, name: Option[String], createdAt: LocalDateTime)
@@ -7,7 +8,9 @@ final case class User(email: String, password: String, name: Option[String], cre
 /**
  * Singleton to handle user management
  */
-object UserManager {
+class UserManager extends Actor with ActorLogging {
+
+  import UserManager._
 
   // simple list collection - inefficient, but works
   private var users = List[User]()
@@ -38,4 +41,22 @@ object UserManager {
   def clear = {
     users = List[User]()
   }
+
+  /**
+   * message handler
+   */
+  override def receive: Receive = {
+    case Get => sender ! users
+    case Clear => sender ! clear
+    case Create(newUser: UserRequest) => sender ! create(newUser)
+  }
+}
+
+object UserManager {
+  def props(): Props = Props(new UserManager())
+
+  // messages that this Actor supports
+  case object Get
+  case object Clear
+  case class Create(newUser: UserRequest)
 }

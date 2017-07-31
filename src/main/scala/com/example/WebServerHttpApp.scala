@@ -2,11 +2,21 @@ package com.bitbrew.bootcamp
 
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
+import java.util.concurrent.TimeUnit
+
+import akka.Done
+import akka.actor.{ Actor, ActorRef, ActorSystem, PoisonPill, Props }
+import akka.pattern.ask
 import spray.json._
 import akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport
 import akka.http.scaladsl.marshallers.xml.ScalaXmlSupport.defaultNodeSeqMarshaller
 import akka.http.scaladsl.server.{ HttpApp, RejectionHandler, Route, ValidationRejection }
 import akka.http.scaladsl.model.StatusCodes
+import akka.util.Timeout
+
+import scala.concurrent.Await
+import scala.concurrent.duration.Duration
+import scala.util.Try
 
 /**
  * Class for our nice field validation json response
@@ -60,6 +70,19 @@ trait JsonSupport extends SprayJsonSupport with DefaultJsonProtocol {
  */
 object WebServerHttpApp extends HttpApp with JsonSupport {
 
+  // use the actor system that the HttpApp provides
+  var dataSystem = ActorSystem("data")
+  val manager = dataSystem.actorOf(Props[UserManager], "user-manager")
+  implicit val timeout = Timeout(2, TimeUnit.SECONDS)
+
+  /**
+   * Used to terminate the actor system when the server shuts down
+   */
+  override def postServerShutdown(attempt: Try[Done], system: ActorSystem): Unit = {
+    manager ! PoisonPill
+    dataSystem.terminate
+  }
+
   // couldn't get this to work through just making it
   // implicit - had to add it to the route handling explicitly
   implicit def rejectionHandler =
@@ -88,18 +111,22 @@ object WebServerHttpApp extends HttpApp with JsonSupport {
         post {
           handleRejections(rejectionHandler) {
             entity(as[UserRequest]) { userRequest =>
-              val user = UserManager.create(userRequest)
+              val future = manager ? UserManager.Create(userRequest)
+              val user = Await.result(future, timeout.duration).asInstanceOf[User]
               complete(StatusCodes.Created, user)
             }
           }
         } ~
           // get all users
           get {
-            complete(UserManager.get)
+            val future = manager ? UserManager.Get
+            val users = Await.result(future, timeout.duration).asInstanceOf[List[User]]
+            complete(users)
           } ~
           // clear all users
           delete {
-            UserManager.clear
+            val future = manager ? UserManager.Clear
+            Await.result(future, timeout.duration)
             complete(StatusCodes.NoContent)
           }
       }
