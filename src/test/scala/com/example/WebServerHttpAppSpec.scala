@@ -50,17 +50,20 @@ class WebServerHttpAppSpec extends WordSpec with Matchers with ScalatestRouteTes
             // email is a required field
             val body = Map("name" -> "ian")
             Post("/users", body) ~> WebServerHttpApp.routes ~> check {
+              // if doing properly, this should also return some nice json validation response
               handled shouldBe false
             }
           }
         }
 
         "invalid email field provided" should {
-          "not be handled" in {
+          "return UnprocessableEntity with JSON" in {
             val body = Map("name" -> "ian", "email" -> "garbage@.com")
             Post("/users", body) ~> WebServerHttpApp.routes ~> check {
-              handled shouldBe false
-              // todo - check return type
+              handled shouldBe true
+              status shouldBe StatusCodes.UnprocessableEntity
+              val response = responseAs[Map[String, String]]
+              response shouldBe Map("code" -> "invalid", "field" -> "email", "message" -> "The email address does not appear to be valid")
             }
           }
         }
@@ -70,16 +73,23 @@ class WebServerHttpAppSpec extends WordSpec with Matchers with ScalatestRouteTes
             val body = Map("name" -> "ian", "email" -> "ian@bitbrew.com")
             Post("/users", body) ~> WebServerHttpApp.routes ~> check {
               status shouldBe StatusCodes.Created
-              // todo check object
+              val response = responseAs[Map[String, String]]
+              response("name") shouldBe "ian"
+              response("email") shouldBe "ian@bitbrew.com"
+              response("password") shouldBe "randompassword"
+              // createdAt timestamp should be within 100ms
+              val duration = TestUtilities.durationFromNowMs(response("createdAt"))
+              duration should be < 100L
             }
           }
         }
       }
 
       "DELETE requests" should {
-        "return a 202 (Accepted) response" in {
+        "return a 204 (NoContent) response" in {
           Delete("/users") ~> WebServerHttpApp.routes ~> check {
-            status shouldBe StatusCodes.Accepted
+            status shouldBe StatusCodes.NoContent
+            responseAs[String] shouldBe ""
           }
         }
       }

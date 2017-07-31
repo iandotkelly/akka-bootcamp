@@ -1,16 +1,21 @@
 package com.bitbrew.bootcamp
 
-/**
- * Imports for JSON Marshalling
- */
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
-
 import spray.json._
 import akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport
 import akka.http.scaladsl.marshallers.xml.ScalaXmlSupport.defaultNodeSeqMarshaller
-import akka.http.scaladsl.server.{ HttpApp, Route }
+import akka.http.scaladsl.server.{ HttpApp, RejectionHandler, Route, ValidationRejection }
 import akka.http.scaladsl.model.StatusCodes
+
+/**
+ * Class for our nice field validation json response
+ *
+ * @param field
+ * @param message
+ * @param code
+ */
+final case class CustomValidationResponse(field: String, message: String, code: String = "invalid")
 
 /**
  * Marshaller for the /user request object
@@ -20,7 +25,10 @@ import akka.http.scaladsl.model.StatusCodes
  * "name": "Hubert Frederickson"
  * }
  */
-final case class UserRequest(email: String, name: Option[String])
+final case class UserRequest(email: String, name: Option[String]) {
+  // ugly way of passing two pieces of data to my custom rejection handler
+  require(validators.email(email), ";email;The email address does not appear to be valid")
+}
 
 /**
  * Trait to support JSON marshalling for all the types we need to support
@@ -44,12 +52,30 @@ trait JsonSupport extends SprayJsonSupport with DefaultJsonProtocol {
 
   implicit val userRequestFormat: RootJsonFormat[UserRequest] = jsonFormat2(UserRequest)
   implicit val userFormat: RootJsonFormat[User] = jsonFormat4(User)
+  implicit val validationResponseFormat: RootJsonFormat[CustomValidationResponse] = jsonFormat3(CustomValidationResponse)
 }
 
 /**
  * Web Server
  */
 object WebServerHttpApp extends HttpApp with JsonSupport {
+
+  // couldn't get this to work through just making it
+  // implicit - had to add it to the route handling explicitly
+  implicit def rejectionHandler =
+    RejectionHandler.newBuilder()
+      .handle {
+        case ValidationRejection(msg, _) =>
+          // split message into tokens if possible
+          val response = msg.split(";") match {
+            // expected format of "{standard prefix};{field-name};{custom message}"
+            case Array(_: String, field: String, message: String) => CustomValidationResponse(field, message)
+            // something strange happened, lets return the full message
+            case _ => CustomValidationResponse("unknown", msg)
+          }
+          complete((StatusCodes.UnprocessableEntity, response))
+      }
+      .result()
 
   override def routes: Route =
     path("hello") {
@@ -60,8 +86,8 @@ object WebServerHttpApp extends HttpApp with JsonSupport {
       path("users") {
         // create user
         post {
-          entity(as[UserRequest]) { userRequest =>
-            validate(validators.email(userRequest.email), "Not a valid email address") {
+          handleRejections(rejectionHandler) {
+            entity(as[UserRequest]) { userRequest =>
               val user = UserManager.create(userRequest)
               complete(StatusCodes.Created, user)
             }
@@ -74,7 +100,7 @@ object WebServerHttpApp extends HttpApp with JsonSupport {
           // clear all users
           delete {
             UserManager.clear
-            complete(StatusCodes.Accepted)
+            complete(StatusCodes.NoContent)
           }
       }
 }
