@@ -71,7 +71,7 @@ trait JsonSupport extends SprayJsonSupport with DefaultJsonProtocol {
 object WebServerHttpApp extends HttpApp with JsonSupport {
 
   // use the actor system that the HttpApp provides
-  var dataSystem = ActorSystem("data")
+  val dataSystem = ActorSystem("data")
   val manager = dataSystem.actorOf(Props[UserManager], "user-manager")
   implicit val timeout = Timeout(2, TimeUnit.SECONDS)
 
