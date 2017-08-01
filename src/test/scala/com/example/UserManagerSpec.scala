@@ -2,21 +2,33 @@
 package com.bitbrew.bootcamp.test
 
 import java.time.LocalDateTime
+import java.util.concurrent.TimeUnit
 
-import akka.actor.{ ActorSystem, Props }
+import akka.actor.{ ActorSystem, PoisonPill, Props }
 import akka.pattern.ask
-import com.bitbrew.bootcamp.WebServerHttpApp.{ dataSystem, timeout }
+import akka.util.Timeout
 import com.bitbrew.bootcamp.{ TestUtilities, User, UserManager, UserRequest }
-import org.scalatest.{ Matchers, WordSpec }
+import org.scalatest.{ BeforeAndAfterAll, Matchers, WordSpec }
 
 import scala.concurrent.Await
+import scala.concurrent.duration.Duration
 
-// note - does not test the actor system yet
+/**
+ * Note running this spec and the web-server spec in one 'test' fails due to akka-persistence
+ * file locking issues, despite an attempt to separate these into separate journals.
+ */
 
-class UserManagerSpec extends WordSpec with Matchers {
+class UserManagerSpec extends WordSpec with Matchers with BeforeAndAfterAll {
 
-  val system = ActorSystem("test-system")
-  val manager = dataSystem.actorOf(Props[UserManager], "test-manager")
+  private val system = ActorSystem("test-system")
+  private val manager = system.actorOf(Props(classOf[UserManager], "test-manager"), "test-manager")
+  implicit val timeout = Timeout(2, TimeUnit.SECONDS)
+
+  override def afterAll = {
+    manager ! PoisonPill
+    system.terminate
+    Await.ready(system.whenTerminated, Duration(1, TimeUnit.MINUTES))
+  }
 
   "UserManager" when {
 
@@ -38,7 +50,7 @@ class UserManagerSpec extends WordSpec with Matchers {
         TestUtilities.timeDifferenceMs(user.createdAt, LocalDateTime.now) should be < 500L
         // the user should be returned, and added to the collection
         val getFuture = manager ? UserManager.Get
-        var users = Await.result(getFuture, timeout.duration).asInstanceOf[List[User]]
+        val users = Await.result(getFuture, timeout.duration).asInstanceOf[List[User]]
         users.length shouldBe 1
         users(0) shouldBe user
       }

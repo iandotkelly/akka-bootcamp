@@ -6,10 +6,16 @@ import akka.http.scaladsl.model.StatusCodes
 import akka.http.scaladsl.testkit.ScalatestRouteTest
 import spray.json.DefaultJsonProtocol._
 import akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport._
-import org.scalatest.{ Matchers, WordSpec }
+import org.scalatest.{ BeforeAndAfterAll, Matchers, WordSpec }
+
 import scala.xml.NodeSeq
 
-class WebServerHttpAppSpec extends WordSpec with Matchers with ScalatestRouteTest {
+class WebServerHttpAppSpec extends WordSpec with Matchers with ScalatestRouteTest with BeforeAndAfterAll {
+
+  override def afterAll = {
+    // force our web app to terminate correctly
+    WebServerHttpApp.terminateActors
+  }
 
   "WebServiceHttpApp" when {
 
@@ -25,9 +31,9 @@ class WebServerHttpAppSpec extends WordSpec with Matchers with ScalatestRouteTes
       }
 
       "POST requests" should {
-        "not be handled" in {
+        "answer with Method Not Allowed" in {
           Post("/hello") ~> WebServerHttpApp.routes ~> check {
-            handled shouldBe false
+            status shouldBe StatusCodes.MethodNotAllowed
           }
         }
       }
@@ -38,9 +44,9 @@ class WebServerHttpAppSpec extends WordSpec with Matchers with ScalatestRouteTes
       "POST requests" when {
 
         "no JSON provided" should {
-          "not be handled" in {
+          "answer with Bad Request" in {
             Post("/users") ~> WebServerHttpApp.routes ~> check {
-              handled shouldBe false
+              status shouldBe StatusCodes.BadRequest
             }
           }
         }
@@ -50,8 +56,7 @@ class WebServerHttpAppSpec extends WordSpec with Matchers with ScalatestRouteTes
             // email is a required field
             val body = Map("name" -> "ian")
             Post("/users", body) ~> WebServerHttpApp.routes ~> check {
-              // if doing properly, this should also return some nice json validation response
-              handled shouldBe false
+              status shouldBe StatusCodes.BadRequest
             }
           }
         }
