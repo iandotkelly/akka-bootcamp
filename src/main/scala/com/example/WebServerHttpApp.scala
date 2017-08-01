@@ -10,7 +10,7 @@ import akka.pattern.ask
 import spray.json._
 import akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport
 import akka.http.scaladsl.marshallers.xml.ScalaXmlSupport.defaultNodeSeqMarshaller
-import akka.http.scaladsl.server.{ HttpApp, RejectionHandler, Route, ValidationRejection }
+import akka.http.scaladsl.server._
 import akka.http.scaladsl.model.StatusCodes
 import akka.util.Timeout
 
@@ -27,6 +27,8 @@ import scala.util.Try
  */
 final case class CustomValidationResponse(field: String, message: String, code: String = "invalid")
 
+final case class CustomBadRequestResponse(message: String)
+
 /**
  * Marshaller for the /user request object
  *
@@ -36,9 +38,12 @@ final case class CustomValidationResponse(field: String, message: String, code: 
  * }
  */
 final case class UserRequest(email: String, name: Option[String]) {
-  // ugly way of passing two pieces of data to my custom rejection handler
-  require(validators.email(email), ";email;The email address does not appear to be valid")
+  if (!validators.email(email)) {
+    throw ValidationException("email", "The email address does not appear to be valid")
+  }
 }
+
+final case class ValidationException(field: String, message: String) extends IllegalArgumentException
 
 /**
  * Trait to support JSON marshalling for all the types we need to support
@@ -63,6 +68,7 @@ trait JsonSupport extends SprayJsonSupport with DefaultJsonProtocol {
   implicit val userRequestFormat: RootJsonFormat[UserRequest] = jsonFormat2(UserRequest)
   implicit val userFormat: RootJsonFormat[User] = jsonFormat4(User)
   implicit val validationResponseFormat: RootJsonFormat[CustomValidationResponse] = jsonFormat3(CustomValidationResponse)
+  implicit val badRequestResponseFormat: RootJsonFormat[CustomBadRequestResponse] = jsonFormat1(CustomBadRequestResponse)
 }
 
 /**
@@ -83,53 +89,62 @@ object WebServerHttpApp extends HttpApp with JsonSupport {
     dataSystem.terminate
   }
 
-  // couldn't get this to work through just making it
-  // implicit - had to add it to the route handling explicitly
   implicit def rejectionHandler =
     RejectionHandler.newBuilder()
       .handle {
-        case ValidationRejection(msg, _) =>
-          // split message into tokens if possible
-          val response = msg.split(";") match {
-            // expected format of "{standard prefix};{field-name};{custom message}"
-            case Array(_: String, field: String, message: String) => CustomValidationResponse(field, message)
-            // something strange happened, lets return the full message
-            case _ => CustomValidationResponse("unknown", msg)
+        // case to handle our specific field validation
+        case ValidationRejection(msg, exception: Option[Throwable]) => {
+          val response = exception match {
+            case Some(ex: ValidationException) => CustomValidationResponse(ex.field, ex.message)
+            case _ => CustomValidationResponse("unknown", s"An unknown validation problem occurred: ${msg}")
           }
-          complete((StatusCodes.UnprocessableEntity, response))
+          complete(StatusCodes.UnprocessableEntity, response)
+        }
+        // now that this is the handler for everything, want to handle other rejections
+        // so we get some nice json rather than the default string
+        case rejection: Rejection => {
+          val response = rejection match {
+            case malformed: MalformedRequestContentRejection => CustomBadRequestResponse(malformed.message)
+            // bucket for everything else
+            case _ => CustomBadRequestResponse(rejection.toString)
+          }
+          complete(StatusCodes.BadRequest, response)
+        }
       }
       .result()
 
   override def routes: Route =
-    path("hello") {
-      get {
-        complete(<html><body>Hello, world</body></html>)
-      }
-    } ~
-      path("users") {
-        // create user
-        post {
-          handleRejections(rejectionHandler) {
+    handleRejections(rejectionHandler) {
+      path("hello") {
+        get {
+          complete(<html>
+                     <body>Hello, world</body>
+                   </html>)
+        }
+      } ~
+        path("users") {
+          // create user
+          post {
             entity(as[UserRequest]) { userRequest =>
               val future = manager ? UserManager.Create(userRequest)
               val user = Await.result(future, timeout.duration).asInstanceOf[User]
               complete(StatusCodes.Created, user)
             }
-          }
-        } ~
-          // get all users
-          get {
-            val future = manager ? UserManager.Get
-            val users = Await.result(future, timeout.duration).asInstanceOf[List[User]]
-            complete(users)
           } ~
-          // clear all users
-          delete {
-            val future = manager ? UserManager.Clear
-            Await.result(future, timeout.duration)
-            complete(StatusCodes.NoContent)
-          }
-      }
+            // get all users
+            get {
+              val future = manager ? UserManager.Get
+              val users = Await.result(future, timeout.duration).asInstanceOf[List[User]]
+              complete(users)
+            } ~
+            // clear all users
+            delete {
+              val future = manager ? UserManager.Clear
+              Await.result(future, timeout.duration)
+              complete(StatusCodes.NoContent)
+            }
+        }
+    }
 }
 
 object Main {
