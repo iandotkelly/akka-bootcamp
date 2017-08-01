@@ -9,7 +9,13 @@ final case class User(email: String, password: String, name: Option[String], cre
 /**
  * Singleton to handle user management
  */
-class UserManager extends PersistentActor {
+class UserManager(id: String) extends PersistentActor {
+
+  def this() {
+    this("bootcamp-user-manager")
+  }
+
+  override def persistenceId: String = id
 
   import UserManager._
 
@@ -83,7 +89,7 @@ class UserManager extends PersistentActor {
     case SnapshotOffer(_, snapshot: Users) => users = snapshot.users
   }
 
-  def persistenceId = "bootcamp-user-manager"
+  //def persistenceId = "bootcamp-user-manager"
 }
 
 object UserManager {
