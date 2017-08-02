@@ -21,10 +21,20 @@ import scala.concurrent.duration.Duration
 class UserManagerSpec extends WordSpec with Matchers with BeforeAndAfterAll {
 
   private val system = ActorSystem("test-system")
-  private val manager = system.actorOf(Props(classOf[UserManager], "test-manager"), "test-manager")
+  private val manager = system.actorOf(Props(classOf[UserManager]), "test-manager")
   implicit val timeout = Timeout(2, TimeUnit.SECONDS)
 
+  override def beforeAll = {
+    // make sure we're starting with a clear db
+    val future = manager ? UserManager.Clear
+    Await.ready(future, Duration(1, TimeUnit.MINUTES))
+  }
+
   override def afterAll = {
+    // clear out all the results from the db
+    val future = manager ? UserManager.Clear
+    Await.ready(future, Duration(1, TimeUnit.MINUTES))
+    // terminate the actor system
     manager ! PoisonPill
     system.terminate
     Await.ready(system.whenTerminated, Duration(1, TimeUnit.MINUTES))

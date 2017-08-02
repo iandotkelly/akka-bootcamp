@@ -5,7 +5,7 @@ import java.time.format.DateTimeFormatter
 import java.util.concurrent.TimeUnit
 
 import akka.Done
-import akka.actor.{ Actor, ActorRef, ActorSystem, PoisonPill, Props }
+import akka.actor.{ ActorSystem, PoisonPill, Props }
 import akka.pattern.ask
 import spray.json._
 import akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport
