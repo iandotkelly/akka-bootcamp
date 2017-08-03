@@ -19,12 +19,17 @@ class UserManager extends Actor with ActorLogging {
 
   import UserManager._
 
+  // CassandraService.start(true)
+  test
+
   // consider putting this in an initialization method
   // connect to cassandra
   val cluster: Cluster = Cluster.builder()
     .addContactPoint("127.0.0.1")
     .build()
   val session: Session = cluster.connect("bootcamp")
+
+  session.execute("CREATE TABLE IF NOT EXISTS users (email text PRIMARY KEY, password text, name text, createdAt timestamp)")
 
   // prepared statement for insert into the user table
   private val insertUser = session.prepare("INSERT INTO users (email, password, name, createdAt) values (:e, :p, :n, :t)")
