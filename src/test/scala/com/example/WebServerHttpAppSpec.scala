@@ -12,6 +12,8 @@ import scala.xml.NodeSeq
 
 class WebServerHttpAppSpec extends WordSpec with Matchers with ScalatestRouteTest with BeforeAndAfterAll {
 
+  CassandraService.runEmbedded(new CassandraConfig(keySpaceName = "bootcamp"))
+
   override def afterAll = {
     // force our web app to terminate correctly
     WebServerHttpApp.terminateActors

@@ -5,7 +5,6 @@ import java.time.{ LocalDate, LocalDateTime }
 import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
 
-
 object TestUtilities {
 
   private val formatter: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSS")

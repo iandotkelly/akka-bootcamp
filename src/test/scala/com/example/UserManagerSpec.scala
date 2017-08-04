@@ -7,7 +7,7 @@ import java.util.concurrent.TimeUnit
 import akka.actor.{ ActorSystem, PoisonPill, Props }
 import akka.pattern.ask
 import akka.util.Timeout
-import com.bitbrew.bootcamp.{ TestUtilities, User, UserManager, UserRequest }
+import com.bitbrew.bootcamp._
 import org.scalatest.{ BeforeAndAfterAll, Matchers, WordSpec }
 
 import scala.concurrent.Await
@@ -19,6 +19,8 @@ import scala.concurrent.duration.Duration
  */
 
 class UserManagerSpec extends WordSpec with Matchers with BeforeAndAfterAll {
+
+  CassandraService.runEmbedded(new CassandraConfig(keySpaceName = "bootcamp"))
 
   private val system = ActorSystem("test-system")
   private val manager = system.actorOf(Props(classOf[UserManager]), "test-manager")

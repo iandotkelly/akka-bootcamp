@@ -1,68 +1,86 @@
 package com.bitbrew.bootcamp
 
-import org.apache.cassandra.service._
-import org.apache.cassandra.thrift.Cassandra
-import org.apache.thrift.protocol.TBinaryProtocol
-import org.apache.thrift.transport.TSocket
+import javax.management.InstanceAlreadyExistsException
+
+import com.datastax.driver.core.{ Cluster, Session }
 import info.archinnov.achilles.embedded._
 
-object test {
+/**
+ * Holds Cassandra Configuration to pass to the APIs
+ *
+ * @param contactPoint
+ * @param port
+ * @param clusterName
+ * @param keySpaceName
+ */
+case class CassandraConfig(contactPoint: String = "127.0.0.1", port: Int = 9042, clusterName: String = "test-cluster", keySpaceName: String = "testkeyspace")
 
-  CassandraEmbeddedServerBuilder
-    .builder()
-    .withClusterName("Test Cluster")
-    .withListenAddress("127.0.0.1")
-    .withRpcAddress("127.0.0.1")
-    .withBroadcastAddress("127.0.0.1")
-    .withBroadcastRpcAddress("127.0.0.1")
-    .withCQLPort(9042)
-    .withKeyspaceName("bootcamp")
-    .buildServer()
-
-  def populate = {
-
-  }
-}
-
+/**
+ * Service for starting embedded cassandra, and convenience methods to attach to Cassandra
+ */
 object CassandraService {
 
-  def start(supportEmbedded: Boolean = false): Unit = {
+  var embeddedRun: Boolean = false
 
-    System.setProperty("storage-config", "src/main/resources")
-    System.setProperty("cassandra.unsafesystem", "true")
+  /**
+   * Run an embedded version of Cassandra - for testing only
+   *
+   * @param config
+   */
+  def runEmbedded(config: CassandraConfig): Unit = {
 
+    // did we run this already?  simple boolean to skip
+    // all the attempted connection stuff
+    if (embeddedRun) return
+
+    // embedded cassandra doesn't like being started more than once, and
+    // seems to live on between sbt test and sbt run sessions
+    // this code tests a connection
+    val testCluster = Cluster.builder()
+      .addContactPoint(config.contactPoint)
+      .build()
+    var connected: Boolean = false
     try {
-      val client = new CassandraClient("127.0.0.1", 9042)
-      client.open
+      val testSession = testCluster.connect(config.keySpaceName)
+      connected = true
+      testSession.close
     } catch {
-      case _: Exception => {
-        val cassandra = new Runnable {
-          val cassandraDaemon = new CassandraDaemon
-          cassandraDaemon.init(null)
-          override def run(): Unit = cassandraDaemon.start
-        }
+      case _: Throwable => {}
+    } finally {
+      testCluster.close
+    }
 
-        val t = new Thread(cassandra)
-        t.setDaemon(true)
-        t.start
+    // finally only create a new connection if it appears we cannot
+    // connect to an existing one
+    if (!connected) {
+      try {
+        CassandraEmbeddedServerBuilder
+          .builder()
+          .withClusterName(config.clusterName)
+          .withListenAddress(config.contactPoint)
+          .withRpcAddress(config.contactPoint)
+          .withBroadcastAddress(config.contactPoint)
+          .withBroadcastRpcAddress(config.contactPoint)
+          .withCQLPort(config.port)
+          .withKeyspaceName(config.keySpaceName)
+          .buildServer()
+      } catch {
+        // bury this exceptions
+        case _: InstanceAlreadyExistsException => {}
       }
     }
   }
-}
 
-class CassandraClient(host: String, port: Int) {
-  val tr = new TSocket(host, port)
-  val proto = new TBinaryProtocol(tr)
-  val client = new Cassandra.Client(proto)
-  var isConnected = false
-
-  def open = {
-    tr.open
-    isConnected = true
-  }
-
-  def close = {
-    tr.close
-    isConnected = false
+  /**
+   * Get a Cassandra session object
+   * @param config
+   * @return
+   */
+  def getSession(config: CassandraConfig): Session = {
+    val cluster = Cluster.builder()
+      .addContactPoint(config.contactPoint)
+      .build()
+    val session = cluster.connect(config.keySpaceName)
+    session
   }
 }

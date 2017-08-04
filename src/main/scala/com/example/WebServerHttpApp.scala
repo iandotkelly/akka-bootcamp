@@ -94,6 +94,7 @@ trait JsonSupport extends SprayJsonSupport with DefaultJsonProtocol {
  */
 object WebServerHttpApp extends HttpApp with JsonSupport {
 
+  // set up the actor system
   val dataSystem = ActorSystem("data")
   val manager = dataSystem.actorOf(Props[UserManager], "user-manager")
   implicit val timeout = Timeout(2, TimeUnit.SECONDS)
@@ -168,9 +169,17 @@ object WebServerHttpApp extends HttpApp with JsonSupport {
     }
 }
 
+/**
+ * Application entry point
+ */
 object Main {
   def main(args: Array[String]) {
-    // This will start the server until the return key is pressed
+
+    // argument to start the embedded server
+    if (args.length > 0 && args(0) == "embedded") {
+      CassandraService.runEmbedded(CassandraConfig(keySpaceName = "bootcamp"))
+    }
+
     WebServerHttpApp.startServer("localhost", 8080)
   }
 }
